@@ -1,0 +1,62 @@
+name: "DevOps Deploy Pipeline"
+
+on:
+  workflow_dispatch: 
+permissions:
+  id-token: write  
+  contents: read
+
+jobs:
+  infrastructure_and_app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Connect to AWS via OIDC (Dynamic Token)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-eks-deploy-role
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      - name: Terraform Apply (Infrastructure Check/Build)
+        run: |
+          cd terraform
+          terraform apply -auto-approve
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: "namegen-app"
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY --all-tags
+
+      - name: Update Kubeconfig
+        run: |
+          aws eks update-kubeconfig --region us-east-1 --name namegen-eks-cluster
+
+      - name: Inject Database Secrets
+        env:
+          MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y gettext
+          envsubst < k8s/mongodb-secret.yaml > k8s/mongodb-secret-final.yaml
+          mv k8s/mongodb-secret-final.yaml k8s/mongodb-secret.yaml
+
+      - name: Deploy to EKS (Kubernetes Check/Build)
+        run: |
+          kubectl apply -f k8s/
