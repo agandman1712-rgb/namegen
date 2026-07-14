@@ -43,8 +43,9 @@ resource "aws_eks_cluster" "eks_cluster" {
   }
 
   compute_config {
-    enabled    = true
-    node_pools = ["general-purpose"]
+    enabled       = true
+    node_role_arn = aws_iam_role.eks_node_role.arn
+    node_pools    = ["general-purpose"]
   }
 
   kubernetes_network_config {
@@ -59,5 +60,10 @@ resource "aws_eks_cluster" "eks_cluster" {
     }
   }
 
-  depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]
+  depends_on = [
+    aws_iam_role_policy_attachment.eks_cluster_policy,
+    aws_iam_role_policy_attachment.node_WorkerNodePolicy,
+    aws_iam_role_policy_attachment.node_CNI_Policy,
+    aws_iam_role_policy_attachment.node_RegistryReadOnly
+  ]
 }
