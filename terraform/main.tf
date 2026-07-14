@@ -27,7 +27,7 @@ module "vpc" {
   single_nat_gateway = true
 
   public_subnet_tags = {
-    "kubernetes.io/role/elb" = "1"  
+    "kubernetes.io/role/elb" = "1"
   }
 }
 
@@ -35,6 +35,8 @@ resource "aws_eks_cluster" "eks_cluster" {
   name     = "namegen-eks-cluster"
   role_arn = aws_iam_role.eks_cluster_role.arn
   version  = "1.31"
+
+  bootstrap_self_managed_addons = false
 
   vpc_config {
     subnet_ids = module.vpc.private_subnets
@@ -47,6 +49,12 @@ resource "aws_eks_cluster" "eks_cluster" {
 
   kubernetes_network_config {
     elastic_load_balancing {
+      enabled = true
+    }
+  }
+
+  storage_config {
+    block_storage {
       enabled = true
     }
   }
