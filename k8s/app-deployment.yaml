@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: namegen
+spec:
+  replicas: 2 
+  selector:
+    matchLabels:
+      app: namegen
+  template:
+    metadata:
+      labels:
+        app: namegen
+    spec:
+      containers:
+        - name: namegen
+          image: namegen:latest 
+          ports:
+            - containerPort: 8080
+          env:
+            - name: MONGODB_URL
+              value: "mongodb://genuser:password@mongodb:27017/namegen?authSource=admin"

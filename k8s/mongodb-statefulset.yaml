@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+spec:
+  serviceName: "mongodb"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:3.6
+          ports:
+            - containerPort: 27017
+          environment:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              value: "genuser"
+            - name: MONGO_INITDB_DATABASE
+              value: "namegen"
+            # שליפת הסיסמה הסודית בצורה מאובטחת!
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-secrets
+                  key: database-password
+          volumeMounts:
+            - name: mongodb-storage
+              mountPath: /data/db
+  volumeClaimTemplates:
+    - metadata:
+        name: mongodb-storage
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: gp3
+        resources:
+          requests:
+            storage: 5Gi
