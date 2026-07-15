@@ -50,11 +50,6 @@ module "eks" {
     node_pool_ids = ["general-purpose"]
   }
 
-  cluster_network_config = {
-    elastic_load_balancing = { enabled = true }
-  }
-
-
   authentication_mode = "API_AND_CONFIG_MAP"
 
   enable_cluster_creator_admin_permissions = true
