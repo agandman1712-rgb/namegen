@@ -70,6 +70,5 @@ jobs:
 
       - name: Deploy to EKS (Kubernetes Check/Build)
         run: |
-          sed -i "s|://amazonaws.com|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app.yaml
-          
+          sed -i "s|://amazonaws.com|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g"          
           kubectl apply -f k8s/
