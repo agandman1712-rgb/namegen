@@ -1,4 +1,4 @@
-name: "DevOps Deploy Pipeline"
+name: "DevOps Deploy Pipeline EC2"
 
 on:
   workflow_dispatch: 
@@ -9,10 +9,9 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: namegen
-  EKS_CLUSTER_NAME: namegen-cluster
 
 jobs:
-  infrastructure_and_app:
+  deploy_to_ec2:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -28,16 +27,16 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init
+      - name: Terraform Init & Apply
+        id: terraform
         run: |
           cd terraform
           terraform init
-
-      - name: Terraform Apply (Infrastructure Check/Build)
-        run: |
-          cd terraform
           terraform apply -auto-approve
-          
+          # שמירת ה-IP הציבורי כמשתנה לצעדים הבאים
+          SERVER_IP=$(terraform output -raw server_public_ip)
+          echo "SERVER_IP=$SERVER_IP" >> $GITHUB_ENV
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -45,59 +44,37 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build, tag, and push image to Amazon ECR
+      - name: Build and Push Image to ECR
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Update Kubeconfig for EKS
+      - name: Deploy Containers on EC2 via SSM/AWS CLI
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
-
-      - name: Inject Database Secrets
-        env:
-          MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
-        run: |
-          sudo apt-get update && sudo apt-get install -y gettext
-          envsubst < k8s/mongodb-secret.yaml > k8s/mongodb-secret-final.yaml
-          mv k8s/mongodb-secret-final.yaml k8s/mongodb-secret.yaml
-
-      - name: Prepare Deployment Image Tag
-        run: |
-          sed -i "s|image: .*namegen:.*|image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app-deployment.yaml
-
-      - name: Deploy to EKS (Kubernetes Check/Build)
-        run: |
-          # הפעלת כל הקבצים לפי הסדר הנכון
-          kubectl apply -f k8s/mongodb-secret.yaml
-          kubectl apply -f k8s/mongodb-pvc.yaml
-          kubectl apply -f k8s/mongodb-service.yaml
-          kubectl apply -f k8s/mongodb-statefulset.yaml
-          kubectl apply -f k8s/app-deployment.yaml
-          kubectl apply -f k8s/app-service.yaml
+          echo "ממתין 30 שניות שרכיב ה-Docker בשרת יסיים להתקין..."
+          sleep 30
           
-      - name: Fetch and Print Application URL from EKS (NodePort)
-        shell: bash
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --instance-ids $(cd terraform && terraform output -raw server_public_ip) \
+            --parameters commands=["
+              sudo docker login -u AWS -p ${{ steps.login-ecr.outputs.registry }} ${{ steps.login-ecr.outputs.registry }}
+              sudo docker stop namegen-app mongodb || true
+              sudo docker rm namegen-app mongodb || true
+              sudo docker run -d --name mongodb -p 27017:27017 -e MONGO_INITDB_ROOT_PASSWORD=${{ secrets.MONGODB_PASSWORD }} mongo:latest
+              sudo docker run -d --name namegen-app -p 8080:8080 -e MONGODB_URL='mongodb://genuser:${{ secrets.MONGODB_PASSWORD }}@localhost:27017/namegen?authSource=admin' ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+            "] \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Print Application URL
         run: |
           echo "=================================================="
-          echo "🔎 מאתר את ה-IP הציבורי של השרתים בקלאסטר..."
-          
-          # שליפת ה-IP הציבורי של השרת הפיזי הראשון בקוברנטיס
-          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null)
-          
-          echo "=================================================="
-          if [ -z "$NODE_IP" ] || [ "$NODE_IP" = "null" ]; then
-            echo "⏳ השרתים הפיזיים עדיין בבנייה (זה לוקח ל-EKS Auto Mode כ-3-5 דקות)."
-            echo "בבקשה הרץ את ה-Pipeline שוב בעוד כמה דקות או בדוק את ה-AWS Console."
-          else
-            echo "🚀 האפליקציה עלתה בהצלחה לקלאסטר!"
-            echo "🔗 הקישור המעודכן לאפליקציה שלך:"
-            echo "http://$NODE_IP:30080"
-          fi
+          echo "🚀 ה-Deployment עבר בהצלחה בשיטת EC2!"
+          echo "🔗 קישור ישיר לאפליקציה שלך:"
+          echo "http://${{ env.SERVER_IP }}:8080"
           echo "=================================================="
