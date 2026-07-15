@@ -73,15 +73,17 @@ jobs:
           sed -i "s|://amazonaws.com|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app-deployment.yaml         
           kubectl apply -f k8s/
           
-      - name: Get Application URL
+      - name: Auto-Detect and Print App URL
         run: |
-          echo "ממתין 10 שניות להנפקת הכתובת מ-AWS..."
-          sleep 10
+          echo "מאתר את הכתובת הדינמית מהענן..."
           
-          URL=$(kubectl get svc namegen-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          DYNAMIC_IP=$(terraform show -json | jq -r '.. | .public_ip? // empty' | head -n 1)
           
-          echo "=========================================================="
-          echo "🎉 האפליקציה שלך מוכנה באוויר! 🎉"
-          echo "העתק את הקישור הבא והדבק אותו בדפדפן שלך:"
-          echo "http://$URL"
-          echo "=========================================================="
+          if [ -z "$DYNAMIC_IP" ]; then
+            DYNAMIC_IP=$(terraform show -json | jq -r '.. | .dns_name? // empty' | head -n 1)
+          fi
+
+          echo "=================================================="
+          echo "🚀 הענן עלה בהצלחה!"
+          echo "🔗 הקישור המעודכן לאפליקציה: http://$DYNAMIC_IP:8080"
+          echo "=================================================="=="
