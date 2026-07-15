@@ -1,4 +1,4 @@
-erraform {
+terraform {
   required_version = ">= 1.5.0"
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 5.0" }
@@ -43,14 +43,13 @@ module "eks" {
   vpc_id          = module.vpc.vpc_id
   subnet_ids      = module.vpc.private_subnets
 
+  # הפעלת EKS Auto Mode
   cluster_compute_config = {
     enabled       = true
     node_pool_ids = ["general-purpose"]
   }
 
-  access_config = {
-    authentication_mode = "API_AND_CONFIG_MAP"
-  }
+  authentication_mode = "API_AND_CONFIG_MAP"
 
   enable_cluster_creator_admin_permissions = true
 }
