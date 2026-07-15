@@ -38,28 +38,6 @@ jobs:
           cd terraform
           terraform apply -auto-approve
           
-      - name: Update Kubeconfig for EKS
-        run: |
-          aws eks update-kubeconfig --region us-east-1 --name namegen-cluster
-
-      - name: Deploy Kubernetes Manifests
-        run: |
-          kubectl apply -f k8s/mongodb-secret.yaml
-          kubectl apply -f k8s/mongodb-pvc.yaml
-          kubectl apply -f k8s/mongodb-service.yaml
-          kubectl apply -f k8s/mongodb-statefulset.yaml
-          kubectl apply -f k8s/app-deployment.yaml
-          kubectl apply -f k8s/app-service.yaml
-      
-      - name: Fetch and Print Application URL from EKS
-        shell: bash
-        run: |
-          echo "=== בודק האם ה-Service בכלל נוצר ==="
-          kubectl get svc -A
-          
-          echo "=== בודק האם יש שגיאות במערכת ==="
-          kubectl get events --sort-by='.metadata.creationTimestamp' -n default | tail -n 10
-          
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -78,7 +56,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Update Kubeconfig
+      - name: Update Kubeconfig for EKS
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
 
@@ -90,10 +68,22 @@ jobs:
           envsubst < k8s/mongodb-secret.yaml > k8s/mongodb-secret-final.yaml
           mv k8s/mongodb-secret-final.yaml k8s/mongodb-secret.yaml
 
+      - name: Prepare Deployment Image Tag
+        run: |
+          # עדכון נכון של ה-Image בתוך המניפסט לגרסה הטרייה שזה עתה בנינו
+          # מניח שבקובץ app-deployment.yaml רשום בשדה image משהו כמו: image: <ACCOUNT_ID>://
+          # הפקודה הזו מחליפה את :latest (או כל מה שבא אחרי שם הריפו) ב-TAG הדינמי החדש
+          sed -i "s|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:.*|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app-deployment.yaml
+
       - name: Deploy to EKS (Kubernetes Check/Build)
         run: |
-          sed -i "s|://amazonaws.com|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app-deployment.yaml         
-          kubectl apply -f k8s/
+          # הפעלת כל הקבצים לפי הסדר הנכון
+          kubectl apply -f k8s/mongodb-secret.yaml
+          kubectl apply -f k8s/mongodb-pvc.yaml
+          kubectl apply -f k8s/mongodb-service.yaml
+          kubectl apply -f k8s/mongodb-statefulset.yaml
+          kubectl apply -f k8s/app-deployment.yaml
+          kubectl apply -f k8s/app-service.yaml
           
       - name: Fetch and Print Application URL from EKS
         shell: bash
@@ -114,10 +104,13 @@ jobs:
           echo "=================================================="
           if [ -z "$EXTERNAL_DNS" ] || [ "$EXTERNAL_DNS" = "null" ]; then
             echo "⚠️ חלף הזמן והענן עדיין לא הקצה DNS ציבורי."
+            echo "מבצע דיבאג אוטומטי - בודק את מצב ה-Service:"
+            kubectl describe svc namegen-service
+            echo "=== בודק האם יש שגיאות כלליות ב-Namespace ==="
+            kubectl get events --sort-by='.metadata.creationTimestamp' | tail -n 10
           else
             echo "🚀 האפליקציה עלתה בהצלחה לענן AWS!"
             echo "🔗 הקישור המעודכן לאפליקציה שלך:"
             echo "http://$EXTERNAL_DNS"
           fi
-          echo "=================================================="
           echo "=================================================="
