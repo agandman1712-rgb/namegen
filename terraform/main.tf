@@ -14,9 +14,15 @@ provider "aws" {
   region = "us-east-1"
 }
 
+# שימוש ב-VPC הדיפולטיבי הקיים בחשבון כדי למנוע התנגשויות state
+data "aws_vpc" "default" {
+  default = true
+}
+
 resource "aws_security_group" "app_sg" {
-  name        = "namegen-app-sg"
+  name        = "namegen-app-sg-v2"
   description = "Allow web traffic"
+  vpc_id      = data.aws_vpc.default.id
 
   ingress {
     from_port   = 8080
@@ -41,8 +47,8 @@ resource "aws_security_group" "app_sg" {
 }
 
 resource "aws_instance" "app_server" {
-  ami                    = "ami-0c7217cdde317cfec" # Ubuntu 22.04 LTS ב-us-east-1
-  instance_type          = "t3.micro"               # חסכוני וכלול ב-Free Tier
+  ami                    = "ami-0c7217cdde317cfec" # Ubuntu 22.04 LTS
+  instance_type          = "t2.micro"          
   vpc_security_group_ids = [aws_security_group.app_sg.id]
 
   user_data = <<-EOF
