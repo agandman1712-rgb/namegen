@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: namegen
-          image: ://amazonaws.com 
+          image: PLACEHOLDER_IMAGE
           ports:
             - containerPort: 8080
           env:
@@ -25,3 +25,10 @@ spec:
                 secretKeyRef:
                   name: mongodb-secret
                   key: mongo-root-password
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
