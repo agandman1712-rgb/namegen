@@ -3,6 +3,7 @@ terraform {
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 5.0" }
   }
+
   backend "s3" {
     bucket         = "namegen-terraform-state-1712"
     key            = "state/terraform.tfstate"
@@ -14,56 +15,54 @@ provider "aws" {
   region = "us-east-1"
 }
 
-# שימוש ב-VPC הדיפולטיבי הקיים בחשבון כדי למנוע התנגשויות state
-data "aws_vpc" "default" {
-  default = true
-}
+data "aws_availability_zones" "available" {}
 
-resource "aws_security_group" "app_sg" {
-  name        = "namegen-app-sg-v2"
-  description = "Allow web traffic"
-  vpc_id      = data.aws_vpc.default.id
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.0"
 
-  ingress {
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  name            = "namegen-vpc"
+  cidr            = "10.0.0.0/16"
+  azs             = slice(data.aws_availability_zones.available.names, 0, 2)
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
+  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
+
+  enable_nat_gateway = true
+  single_nat_gateway = true
+
+  public_subnet_tags  = { 
+    "kubernetes.io/role/elb"                      = "1" 
+    "kubernetes.io/cluster/namegen-cluster"       = "shared" 
   }
-
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  private_subnet_tags = { 
+    "kubernetes.io/role/internal-elb"             = "1" 
+    "kubernetes.io/cluster/namegen-cluster"       = "shared" 
   }
 }
 
-resource "aws_instance" "app_server" {
-  ami                    = "ami-0c7217cdde317cfec" # Ubuntu 22.04 LTS
-  instance_type          = "t2.micro"          
-  vpc_security_group_ids = [aws_security_group.app_sg.id]
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 20.0"
 
-  user_data = <<-EOF
-              #!/bin/bash
-              sudo apt-get update -y
-              sudo apt-get install -y docker.io
-              sudo systemctl start docker
-              sudo systemctl enable docker
-              EOF
+  cluster_name    = "namegen-cluster"
+  cluster_version = "1.31"
+  vpc_id          = module.vpc.vpc_id
+  subnet_ids      = module.vpc.private_subnets
 
-  tags = {
-    Name = "namegen-app-server"
+  cluster_endpoint_public_access = true
+
+  cluster_compute_config = {
+    enabled       = true
+    node_pool_ids = ["general-purpose"]
   }
+
+  authentication_mode = "API_AND_CONFIG_MAP"
+
+  enable_cluster_creator_admin_permissions = true
 }
 
-output "server_public_ip" {
-  value = aws_instance.app_server.public_ip
+resource "aws_ecr_repository" "namegen" {
+  name                 = "namegen"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
 }
