@@ -6,10 +6,6 @@ on:
     branches:
       - main
 
-permissions:
-  id-token: write  
-  contents: read
-
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: namegen
@@ -22,10 +18,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Connect to AWS via OIDC (Dynamic Token)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-eks-deployment-role
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -73,7 +70,6 @@ jobs:
 
       - name: Deploy to EKS (Kubernetes Check/Build)
         run: |
-          # עדכון קובץ ה-app.yaml שיצביע על ה-Image הספציפי והעדכני שנבנה בריצה זו
           sed -i "s|://amazonaws.com|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app.yaml
           
           kubectl apply -f k8s/
