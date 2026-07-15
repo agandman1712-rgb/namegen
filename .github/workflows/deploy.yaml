@@ -37,7 +37,29 @@ jobs:
         run: |
           cd terraform
           terraform apply -auto-approve
+          
+      - name: Update Kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --region us-east-1 --name namegen-cluster
 
+      - name: Deploy Kubernetes Manifests
+        run: |
+          kubectl apply -f k8s/mongodb-secret.yaml
+          kubectl apply -f k8s/mongodb-pvc.yaml
+          kubectl apply -f k8s/mongodb-service.yaml
+          kubectl apply -f k8s/mongodb-statefulset.yaml
+          kubectl apply -f k8s/app-deployment.yaml
+          kubectl apply -f k8s/app-service.yaml
+      
+      - name: Fetch and Print Application URL from EKS
+        shell: bash
+        run: |
+          echo "=== בודק האם ה-Service בכלל נוצר ==="
+          kubectl get svc -A
+          
+          echo "=== בודק האם יש שגיאות במערכת ==="
+          kubectl get events --sort-by='.metadata.creationTimestamp' -n default | tail -n 10
+          
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
