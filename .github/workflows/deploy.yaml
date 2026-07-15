@@ -73,26 +73,37 @@ jobs:
           sed -i "s|://amazonaws.com|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app-deployment.yaml         
           kubectl apply -f k8s/
           
-      - name: Auto-Detect and Print App URL
+      - name: Fetch and Print Application URL from EKS
         shell: bash
         run: |
           echo "=================================================="
-          echo "מאתר את הכתובת הדינמית מהענן..."
+          echo "⏳ ממתין ש-AWS יקצה Load Balancer עבור האפליקציה..."
           
-          terraform show -json > tf_output.json
+          SERVICE_NAME="namegen"
           
-          DYNAMIC_IP=$(jq -r '.. | objects | select(has("public_ip")) | .public_ip' tf_output.json | head -n 1)
-          
-          if [ -z "$DYNAMIC_IP" ]; then
-            DYNAMIC_IP=$(jq -r '.. | objects | select(has("dns_name")) | .dns_name' tf_output.json | head -n 1)
+          if ! kubectl get svc $SERVICE_NAME &>/dev/null; then
+            SERVICE_NAME="app-service"
           fi
           
-          rm -f tf_output.json
+          EXTERNAL_DNS=""
+          for i in {1..30}; do
+            EXTERNAL_DNS=$(kubectl get svc $SERVICE_NAME -o jsonpath='{.status.loadBalancer.ingress.hostname}' 2>/dev/null)
+            if [ ! -z "$EXTERNAL_DNS" ] && [ "$EXTERNAL_DNS" != "null" ]; then
+              break
+            fi
+            echo "עדיין ממתין ל-DNS מהענן (ניסיון $i/30)..."
+            sleep 10
+          done
 
-          echo "🚀 הענן עלה בהצלחה!"
-          if [ -z "$DYNAMIC_IP" ]; then
-            echo "⚠️ לא הצלחתי לאתר IP ציבורי או DNS ב-Terraform. ודא שהמשאבים נוצרו בהצלחה."
+          echo "=================================================="
+          if [ -z "$EXTERNAL_DNS" ] || [ "$EXTERNAL_DNS" = "null" ]; then
+            echo "⚠️ חלף הזמן והענן עדיין לא הקצה DNS ציבורי."
+            echo "ודא שבקובץ app-service.yaml מוגדר type: LoadBalancer."
           else
-            echo "🔗 הקישור המעודכן לאפליקציה: http://$DYNAMIC_IP:8080"
+            echo "🚀 האפליקציה עלתה בהצלחה לענן AWS!"
+            echo "🔗 הקישור המעודכן והדינמי לאפליקציה שלך:"
+            echo "http://$EXTERNAL_DNS"
+            echo ""
+            echo "💡 שים לב: לוקח ל-AWS בדרך כלל 1-2 דקות לאקטב את ה-DNS בדפדפן לאחר ההדפסה."
           fi
           echo "=================================================="
