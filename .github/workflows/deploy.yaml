@@ -79,15 +79,9 @@ jobs:
           echo "=================================================="
           echo "⏳ ממתין ש-AWS יקצה Load Balancer עבור האפליקציה..."
           
-          SERVICE_NAME="namegen"
-          
-          if ! kubectl get svc $SERVICE_NAME &>/dev/null; then
-            SERVICE_NAME="app-service"
-          fi
-          
           EXTERNAL_DNS=""
           for i in {1..30}; do
-            EXTERNAL_DNS=$(kubectl get svc $SERVICE_NAME -o jsonpath='{.status.loadBalancer.ingress.hostname}' 2>/dev/null)
+            EXTERNAL_DNS=$(kubectl get svc namegen-service -o jsonpath='{.status.loadBalancer.ingress.hostname}' 2>/dev/null)
             if [ ! -z "$EXTERNAL_DNS" ] && [ "$EXTERNAL_DNS" != "null" ]; then
               break
             fi
@@ -98,12 +92,10 @@ jobs:
           echo "=================================================="
           if [ -z "$EXTERNAL_DNS" ] || [ "$EXTERNAL_DNS" = "null" ]; then
             echo "⚠️ חלף הזמן והענן עדיין לא הקצה DNS ציבורי."
-            echo "ודא שבקובץ app-service.yaml מוגדר type: LoadBalancer."
           else
             echo "🚀 האפליקציה עלתה בהצלחה לענן AWS!"
-            echo "🔗 הקישור המעודכן והדינמי לאפליקציה שלך:"
+            echo "🔗 הקישור המעודכן לאפליקציה שלך:"
             echo "http://$EXTERNAL_DNS"
-            echo ""
-            echo "💡 שים לב: לוקח ל-AWS בדרך כלל 1-2 דקות לאקטב את ה-DNS בדפדפן לאחר ההדפסה."
           fi
+          echo "=================================================="
           echo "=================================================="
