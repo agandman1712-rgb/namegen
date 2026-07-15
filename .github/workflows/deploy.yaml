@@ -74,16 +74,25 @@ jobs:
           kubectl apply -f k8s/
           
       - name: Auto-Detect and Print App URL
+        shell: bash
         run: |
+          echo "=================================================="
           echo "מאתר את הכתובת הדינמית מהענן..."
           
-          DYNAMIC_IP=$(terraform show -json | jq -r '.. | .public_ip? // empty' | head -n 1)
+          terraform show -json > tf_output.json
+          
+          DYNAMIC_IP=$(jq -r '.. | objects | select(has("public_ip")) | .public_ip' tf_output.json | head -n 1)
           
           if [ -z "$DYNAMIC_IP" ]; then
-            DYNAMIC_IP=$(terraform show -json | jq -r '.. | .dns_name? // empty' | head -n 1)
+            DYNAMIC_IP=$(jq -r '.. | objects | select(has("dns_name")) | .dns_name' tf_output.json | head -n 1)
           fi
+          
+          rm -f tf_output.json
 
-          echo "=================================================="
           echo "🚀 הענן עלה בהצלחה!"
-          echo "🔗 הקישור המעודכן לאפליקציה: http://$DYNAMIC_IP:8080"
-          echo "=================================================="=="
+          if [ -z "$DYNAMIC_IP" ]; then
+            echo "⚠️ לא הצלחתי לאתר IP ציבורי או DNS ב-Terraform. ודא שהמשאבים נוצרו בהצלחה."
+          else
+            echo "🔗 הקישור המעודכן לאפליקציה: http://$DYNAMIC_IP:8080"
+          fi
+          echo "=================================================="
