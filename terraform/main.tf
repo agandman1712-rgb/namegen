@@ -50,7 +50,7 @@ module "eks" {
     node_pool_ids = ["general-purpose"]
   }
 
-  kubernetes_network_config = {
+  cluster_network_config = {
     elastic_load_balancing = { enabled = true }
   }
 
