@@ -72,3 +72,18 @@ jobs:
         run: |
           sed -i "s|://amazonaws.com|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app-deployment.yaml         
           kubectl apply -f k8s/
+          
+      - name: Get Application URL
+        run: |
+          echo "ממתין 10 שניות להנפקת הכתובת מ-AWS..."
+          sleep 10
+          
+          # שליפת הכתובת הציבורית של ה-Service מתוך קוברנטיס
+          # ודא ששם ה-Service כאן (namegen-service) תואם במדויק לשם בקובץ app-service.yaml שלך!
+          URL=$(kubectl get svc namegen-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          
+          echo "=========================================================="
+          echo "🎉 האפליקציה שלך מוכנה באוויר! 🎉"
+          echo "העתק את הקישור הבא והדבק אותו בדפדפן שלך:"
+          echo "http://$URL"
+          echo "=========================================================="
