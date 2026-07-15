@@ -14,9 +14,14 @@ spec:
     spec:
       containers:
         - name: namegen
-          image: namegen:latest 
+          image: ://amazonaws.com 
           ports:
             - containerPort: 8080
           env:
             - name: MONGODB_URL
-              value: "mongodb://genuser:password@mongodb:27017/namegen?authSource=admin"
+              value: "mongodb://genuser:$(MONGO_ROOT_PASSWORD)@mongodb:27017/namegen?authSource=admin"
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-secret
+                  key: mongo-root-password
