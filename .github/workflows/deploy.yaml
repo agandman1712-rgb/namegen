@@ -70,10 +70,7 @@ jobs:
 
       - name: Prepare Deployment Image Tag
         run: |
-          # עדכון נכון של ה-Image בתוך המניפסט לגרסה הטרייה שזה עתה בנינו
-          # מניח שבקובץ app-deployment.yaml רשום בשדה image משהו כמו: image: <ACCOUNT_ID>://
-          # הפקודה הזו מחליפה את :latest (או כל מה שבא אחרי שם הריפו) ב-TAG הדינמי החדש
-          sed -i "s|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:.*|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app-deployment.yaml
+          sed -i "s|image: .*namegen:.*|image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app-deployment.yaml
 
       - name: Deploy to EKS (Kubernetes Check/Build)
         run: |
@@ -85,32 +82,22 @@ jobs:
           kubectl apply -f k8s/app-deployment.yaml
           kubectl apply -f k8s/app-service.yaml
           
-      - name: Fetch and Print Application URL from EKS
+      - name: Fetch and Print Application URL from EKS (NodePort)
         shell: bash
         run: |
           echo "=================================================="
-          echo "⏳ ממתין ש-AWS יקצה Load Balancer עבור האפליקציה..."
+          echo "🔎 מאתר את ה-IP הציבורי של השרתים בקלאסטר..."
           
-          EXTERNAL_DNS=""
-          for i in {1..30}; do
-            EXTERNAL_DNS=$(kubectl get svc namegen-service -o jsonpath='{.status.loadBalancer.ingress.hostname}' 2>/dev/null)
-            if [ ! -z "$EXTERNAL_DNS" ] && [ "$EXTERNAL_DNS" != "null" ]; then
-              break
-            fi
-            echo "עדיין ממתין ל-DNS מהענן (ניסיון $i/30)..."
-            sleep 10
-          done
-
+          # שליפת ה-IP הציבורי של השרת הפיזי הראשון בקוברנטיס
+          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null)
+          
           echo "=================================================="
-          if [ -z "$EXTERNAL_DNS" ] || [ "$EXTERNAL_DNS" = "null" ]; then
-            echo "⚠️ חלף הזמן והענן עדיין לא הקצה DNS ציבורי."
-            echo "מבצע דיבאג אוטומטי - בודק את מצב ה-Service:"
-            kubectl describe svc namegen-service
-            echo "=== בודק האם יש שגיאות כלליות ב-Namespace ==="
-            kubectl get events --sort-by='.metadata.creationTimestamp' | tail -n 10
+          if [ -z "$NODE_IP" ] || [ "$NODE_IP" = "null" ]; then
+            echo "⏳ השרתים הפיזיים עדיין בבנייה (זה לוקח ל-EKS Auto Mode כ-3-5 דקות)."
+            echo "בבקשה הרץ את ה-Pipeline שוב בעוד כמה דקות או בדוק את ה-AWS Console."
           else
-            echo "🚀 האפליקציה עלתה בהצלחה לענן AWS!"
+            echo "🚀 האפליקציה עלתה בהצלחה לקלאסטר!"
             echo "🔗 הקישור המעודכן לאפליקציה שלך:"
-            echo "http://$EXTERNAL_DNS"
+            echo "http://$NODE_IP:30080"
           fi
           echo "=================================================="
