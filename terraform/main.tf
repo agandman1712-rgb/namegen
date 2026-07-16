@@ -15,6 +15,10 @@ provider "aws" {
   region = "us-east-1"
 }
 
+data "aws_iam_role" "lab_role" {
+  name = "LabRole"
+}
+
 data "aws_availability_zones" "available" {}
 
 module "vpc" {
@@ -55,6 +59,14 @@ module "eks" {
     enabled       = true
     node_pool_ids = ["general-purpose"]
   }
+
+  node_pool_instance_types = ["t3.micro"]
+
+  create_iam_role = false
+  iam_role_arn    = data.aws_iam_role.lab_role.arn
+
+  create_node_iam_role = false
+  node_iam_role_arn    = data.aws_iam_role.lab_role.arn
 
   authentication_mode = "API_AND_CONFIG_MAP"
 
