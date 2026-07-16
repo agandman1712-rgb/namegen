@@ -22,11 +22,13 @@ module "vpc" {
   version = "~> 5.0"
 
   name            = "namegen-vpc-v2"
-  cidr            = "10.10.0.0/16"
+  cidr            = "10.50.0.0/16"
   azs             = slice(data.aws_availability_zones.available.names, 0, 2)
   
   private_subnets = []
-  public_subnets  = ["10.10.1.0/24", "10.10.2.0/24"]
+  public_subnets  = ["10.50.1.0/24", "10.50.2.0/24"]
+
+  map_public_ip_on_launch = true 
 
   enable_nat_gateway = false 
   single_nat_gateway = false
@@ -42,7 +44,7 @@ module "eks" {
   version = "~> 20.0"
 
   cluster_name    = "namegen-cluster-v2"
-  cluster_version = "1.30"  
+  cluster_version = "1.30" 
   vpc_id          = module.vpc.vpc_id
   subnet_ids      = module.vpc.public_subnets
 
@@ -58,8 +60,6 @@ module "eks" {
       min_size       = 1
       max_size       = 2
       desired_size   = 1
-      
-      assign_public_ip = true
     }
   }
 
