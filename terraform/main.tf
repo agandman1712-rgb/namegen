@@ -55,18 +55,25 @@ module "eks" {
 
   cluster_endpoint_public_access = true
 
-  cluster_compute_config = {
-    enabled       = true
-    node_pool_ids = ["general-purpose"]
-  }
-
-  node_pool_instance_types = ["t3.micro"]
-
   create_iam_role = false
   iam_role_arn    = data.aws_iam_role.lab_role.arn
 
-  create_node_iam_role = false
-  node_iam_role_arn    = data.aws_iam_role.lab_role.arn
+  cluster_compute_config = {
+    enabled = false
+  }
+
+  eks_managed_node_groups = {
+    default_node_group = {
+      instance_types = ["t3.micro"]
+      
+      min_size     = 1
+      max_size     = 2
+      desired_size = 1
+
+      create_iam_role = false
+      iam_role_arn    = data.aws_iam_role.lab_role.arn
+    }
+  }
 
   authentication_mode = "API_AND_CONFIG_MAP"
 
