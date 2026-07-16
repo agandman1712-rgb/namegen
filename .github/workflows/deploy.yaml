@@ -82,22 +82,33 @@ jobs:
           kubectl apply -f k8s/app-deployment.yaml
           kubectl apply -f k8s/app-service.yaml
           
-      - name: Fetch and Print Application URL from EKS (NodePort)
+      - name: Fetch and Print Application URL from EKS (NLB)
         shell: bash
         run: |
           echo "=================================================="
-          echo "🔎 מאתר את ה-IP הציבורי של השרתים בקלאסטר..."
+          echo "🔎 ממתין להקצאת כתובת ה-Load Balancer ב-AWS (זה לוקח כ-2-3 דקות)..."
+          echo "=================================================="
           
-          # שליפת ה-IP הציבורי של השרת הפיזי הראשון בקוברנטיס
-          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null)
+
+          kubectl rollout status deployment/namegen --timeout=5m
+          
+
+          NLB_DNS=""
+          for i in {1..30}; do
+            NLB_DNS=$(kubectl get svc namegen-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+            if [ ! -z "$NLB_DNS" ] && [ "$NLB_DNS" != "null" ]; then
+              break
+            fi
+            sleep 10
+          done
           
           echo "=================================================="
-          if [ -z "$NODE_IP" ] || [ "$NODE_IP" = "null" ]; then
-            echo "⏳ השרתים הפיזיים עדיין בבנייה (זה לוקח ל-EKS Auto Mode כ-3-5 דקות)."
-            echo "בבקשה הרץ את ה-Pipeline שוב בעוד כמה דקות או בדוק את ה-AWS Console."
+          if [ -z "$NLB_DNS" ] || [ "$NLB_DNS" = "null" ]; then
+            echo "⏳ ה-Load Balancer עדיין בתהליך הקמה ב-AWS."
+            echo "תוכל למצוא את הכתובת בעוד מספר דקות ב-AWS Console תחת EC2 -> Load Balancers."
           else
-            echo "🚀 האפליקציה עלתה בהצלחה לקלאסטר!"
-            echo "🔗 הקישור המעודכן לאפליקציה שלך:"
-            echo "http://$NODE_IP:30080"
+            echo "🚀 ה-Network Load Balancer (NLB) נוצר בהצלחה!"
+            echo "🔗 הקישור הציבורי לפרויקט הגמר שלך:"
+            echo "http://$NLB_DNS"
           fi
           echo "=================================================="
