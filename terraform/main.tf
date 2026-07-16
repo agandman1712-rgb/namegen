@@ -2,7 +2,6 @@ terraform {
   required_version = ">= 1.5.0"
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 5.0" }
-    random = { source = "hashicorp/random", version = "~> 3.0" }
   }
 
   backend "s3" {
@@ -14,12 +13,6 @@ terraform {
 
 provider "aws" {
   region = "us-east-1"
-}
-
-resource "random_string" "suffix" {
-  length  = 4
-  special = false
-  upper   = false
 }
 
 data "aws_availability_zones" "available" {}
@@ -59,14 +52,10 @@ module "eks" {
   cluster_endpoint_public_access = true
   create_iam_role                = true
 
-  cluster_enabled_log_types              = ["api", "audit"]
   create_cloudwatch_log_group            = true
   cloudwatch_log_group_retention_in_days = 1
-  cloudwatch_log_group_name              = "/aws/eks/namegen-cluster/cluster-${random_string.suffix.result}"
 
   cluster_compute_config = { enabled = false }
-  cluster_storage_config = { block_storage = { enabled = false } }
-  cluster_network_config = { elastic_load_balancing = { enabled = false } }
 
   eks_managed_node_groups = {
     default_node_group = {
