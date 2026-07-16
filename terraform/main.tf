@@ -15,8 +15,9 @@ provider "aws" {
   region = "us-east-1"
 }
 
-data "aws_iam_role" "lab_role" {
-  name = "LabRole"
+variable "aws_account_id" {
+  type        = string
+  description = "The AWS Account ID injected from GitHub Secrets"
 }
 
 data "aws_availability_zones" "available" {}
@@ -56,7 +57,7 @@ module "eks" {
   cluster_endpoint_public_access = true
 
   create_iam_role = false
-  iam_role_arn    = data.aws_iam_role.lab_role.arn
+  iam_role_arn    = "arn:aws:iam::${var.aws_account_id}:role/LabRole"
 
   cluster_compute_config = {
     enabled = false
@@ -71,7 +72,7 @@ module "eks" {
       desired_size = 1
 
       create_iam_role = false
-      iam_role_arn    = data.aws_iam_role.lab_role.arn
+      iam_role_arn    = "arn:aws:iam::${var.aws_account_id}:role/LabRole"
     }
   }
 
