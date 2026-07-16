@@ -22,20 +22,17 @@ module "vpc" {
   version = "~> 5.0"
 
   name            = "namegen-vpc-v2"
-  cidr            = "10.10.0.0/16"  
+  cidr            = "10.10.0.0/16"
   azs             = slice(data.aws_availability_zones.available.names, 0, 2)
-  private_subnets = ["10.10.1.0/24", "10.10.2.0/24"]
-  public_subnets  = ["10.10.101.0/24", "10.10.102.0/24"]
+  
+  private_subnets = []
+  public_subnets  = ["10.10.1.0/24", "10.10.2.0/24"]
 
-  enable_nat_gateway = true
-  single_nat_gateway = true
+  enable_nat_gateway = false 
+  single_nat_gateway = false
 
   public_subnet_tags  = { 
     "kubernetes.io/role/elb"                   = "1" 
-    "kubernetes.io/cluster/namegen-cluster-v2" = "shared" 
-  }
-  private_subnet_tags = { 
-    "kubernetes.io/role/internal-elb"          = "1" 
     "kubernetes.io/cluster/namegen-cluster-v2" = "shared" 
   }
 }
@@ -44,10 +41,10 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.0"
 
-  cluster_name    = "namegen-cluster-v2" 
+  cluster_name    = "namegen-cluster-v2"
   cluster_version = "1.31"
   vpc_id          = module.vpc.vpc_id
-  subnet_ids      = module.vpc.private_subnets
+  subnet_ids      = module.vpc.public_subnets 
 
   cluster_endpoint_public_access = true
   create_iam_role                = true
@@ -55,7 +52,15 @@ module "eks" {
   create_cloudwatch_log_group            = true
   cloudwatch_log_group_retention_in_days = 1
 
-  cluster_compute_config = { enabled = false }
+  cluster_compute_config = {
+    enabled = false
+  }
+  cluster_storage_config = {
+    block_storage = { enabled = false }
+  }
+  cluster_network_config = {
+    elastic_load_balancing = { enabled = false }
+  }
 
   eks_managed_node_groups = {
     default_node_group = {
@@ -63,6 +68,8 @@ module "eks" {
       min_size       = 1
       max_size       = 2
       desired_size   = 1
+      
+      assign_public_ip = true
     }
   }
 
@@ -71,7 +78,7 @@ module "eks" {
 }
 
 resource "aws_ecr_repository" "namegen" {
-  name                 = "namegen-v2" 
+  name                 = "namegen-v2"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
 }
