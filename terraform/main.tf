@@ -15,11 +15,6 @@ provider "aws" {
   region = "us-east-1"
 }
 
-variable "aws_account_id" {
-  type        = string
-  description = "The AWS Account ID injected from GitHub Secrets"
-}
-
 data "aws_availability_zones" "available" {}
 
 module "vpc" {
@@ -56,8 +51,7 @@ module "eks" {
 
   cluster_endpoint_public_access = true
 
-  create_iam_role = false
-  iam_role_arn    = "arn:aws:iam::${var.aws_account_id}:role/LabRole"
+  create_iam_role = true
 
   cluster_compute_config = {
     enabled = false
@@ -65,14 +59,11 @@ module "eks" {
 
   eks_managed_node_groups = {
     default_node_group = {
-      instance_types = ["t3.micro"]
+      instance_types = ["t2.micro"]
       
       min_size     = 1
       max_size     = 2
       desired_size = 1
-
-      create_iam_role = false
-      iam_role_arn    = "arn:aws:iam::${var.aws_account_id}:role/LabRole"
     }
   }
 
