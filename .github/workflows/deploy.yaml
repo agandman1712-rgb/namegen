@@ -25,6 +25,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Security and Anti-Leak Setup
+        run: |
+          echo "::add-mask::${{ secrets.AWS_ACCESS_KEY_ID }}"
+          echo "::add-mask::${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+          set +x
+
+      - name: Wait and Verify Elastic IPs Availability
+        run: |
+          echo "בודק זמינות כתובות IP ציבוריות ב-AWS..."
+          for i in {1..12}; do
+            ALLOCATED=$(aws ec2 describe-addresses --region ${{ env.AWS_REGION }} --query "ElasticAddresses[*].AllocationId" --output text | wc -w)
+            if [ "$ALLOCATED" -lt 5 ]; then
+              echo "יש מקום לכתובות חדשות ($ALLOCATED מתוך 5 תפוסות). ממשיך..."
+              exit 0
+            fi
+            echo "⚠️ חריגת מכסת IP (כל 5 הכתובות תפוסות). ממתין 10 שניות לשחרור ברקע..."
+            sleep 10
+          done
+          echo "❌ AWS עדיין חוסם כתובות IP. אנא ודא שביצעת Release לכתובות ב-VPC Console."
+          exit 1
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -33,7 +54,7 @@ jobs:
           cd terraform
           terraform init
 
-      - name: Terraform Apply (Infrastructure Check/Build)
+      - name: Terraform Apply (Infrastructure Build)
         run: |
           cd terraform
           terraform apply -auto-approve
@@ -74,7 +95,6 @@ jobs:
 
       - name: Deploy to EKS (Kubernetes Check/Build)
         run: |
-          # הפעלת כל הקבצים לפי הסדר הנכון
           kubectl apply -f k8s/mongodb-secret.yaml
           kubectl apply -f k8s/mongodb-pvc.yaml
           kubectl apply -f k8s/mongodb-service.yaml
@@ -86,13 +106,9 @@ jobs:
         shell: bash
         run: |
           echo "=================================================="
-          echo "🔎 ממתין להקצאת כתובת ה-Load Balancer ב-AWS (זה לוקח כ-2-3 דקות)..."
+          echo "🔎 ממתין להקצאת כתובת ה-Load Balancer ב-AWS..."
           echo "=================================================="
-          
-
           kubectl rollout status deployment/namegen --timeout=5m
-          
-
           NLB_DNS=""
           for i in {1..30}; do
             NLB_DNS=$(kubectl get svc namegen-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
@@ -101,14 +117,11 @@ jobs:
             fi
             sleep 10
           done
-          
           echo "=================================================="
           if [ -z "$NLB_DNS" ] || [ "$NLB_DNS" = "null" ]; then
             echo "⏳ ה-Load Balancer עדיין בתהליך הקמה ב-AWS."
-            echo "תוכל למצוא את הכתובת בעוד מספר דקות ב-AWS Console תחת EC2 -> Load Balancers."
           else
             echo "🚀 ה-Network Load Balancer (NLB) נוצר בהצלחה!"
-            echo "🔗 הקישור הציבורי לפרויקט הגמר שלך:"
-            echo "http://$NLB_DNS"
+            echo "🔗 הקישור הציבורי שלך: http://$NLB_DNS"
           fi
           echo "=================================================="
