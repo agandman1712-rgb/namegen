@@ -42,25 +42,15 @@ module "eks" {
   version = "~> 20.0"
 
   cluster_name    = "namegen-cluster-v2"
-  cluster_version = "1.31"
+  cluster_version = "1.30"  
   vpc_id          = module.vpc.vpc_id
-  subnet_ids      = module.vpc.public_subnets 
+  subnet_ids      = module.vpc.public_subnets
 
   cluster_endpoint_public_access = true
   create_iam_role                = true
 
   create_cloudwatch_log_group            = true
   cloudwatch_log_group_retention_in_days = 1
-
-  cluster_compute_config = {
-    enabled = false
-  }
-  cluster_storage_config = {
-    block_storage = { enabled = false }
-  }
-  cluster_network_config = {
-    elastic_load_balancing = { enabled = false }
-  }
 
   eks_managed_node_groups = {
     default_node_group = {
