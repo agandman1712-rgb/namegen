@@ -1,45 +1,50 @@
 name: "DevOps Destroy Pipeline"
 
 on:
-  workflow_dispatch:
-    inputs:
-      destroy_scope:
-        description: 'Choose what to delete from AWS to save money:'
-        required: true
-        default: 'expensive_only'
-        type: choice
-        options:
-          - 'expensive_only' 
-          - 'everything'     
+  workflow_dispatch: 
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: namegen-cluster
+
 jobs:
-  infrastructure_destroy:
+  cleanup_and_destroy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Connect to AWS via OIDC
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-eks-deploy-role
-          aws-region: us-east-1
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Update Kubeconfig for EKS
+        continue-on-error: true 
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Delete Kubernetes Services & Storage (Pre-cleanup)
+        continue-on-error: true
+        run: |
+          kubectl delete -f k8s/app-service.yaml || true
+          kubectl delete -f k8s/app-deployment.yaml || true
+          kubectl delete -f k8s/mongodb-statefulset.yaml || true
+          kubectl delete -f k8s/mongodb-pvc.yaml || true
+          echo "ממתין 30 שניות להסרת ה-Load Balancer ב-AWS..."
+          sleep 30
 
       - name: Terraform Init
         run: |
           cd terraform
           terraform init
 
-      - name: Terraform Destroy (Expensive Components Only)
-        if: ${{ github.event.inputs.destroy_scope == 'expensive_only' }}
-        run: |
-          cd terraform
-          terraform destroy -target=aws_eks_cluster.eks_cluster -target=module.vpc.aws_nat_gateway.this -auto-approve
-
-      - name: Terraform Destroy (Everything)
-        if: ${{ github.event.inputs.destroy_scope == 'everything' }}
+      - name: Terraform Destroy 
         run: |
           cd terraform
           terraform destroy -auto-approve
