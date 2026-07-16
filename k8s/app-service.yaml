@@ -3,7 +3,10 @@ kind: Service
 metadata:
   name: namegen-service
   annotations:
-    service.beta.kubernetes.io/aws-load-balancer-class: "://amazonaws.com"
+    service.beta.kubernetes.io/aws-load-balancer-class: "service.k8s.aws/nlb"
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
 spec:
   type: LoadBalancer
   selector:
@@ -11,5 +14,5 @@ spec:
   ports:
     - port: 80        
       targetPort: 8080 
-      nodePort: 30080
       protocol: TCP
+
