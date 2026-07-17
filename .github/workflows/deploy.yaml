@@ -53,4 +53,4 @@ jobs:
 
     - name: Verify Deployment
       run: |
-        kubectl rollout status deployment/namegen --timeout=120s
+        kubectl rollout status deployment/namegen --timeout=180s

@@ -26,6 +26,7 @@ spec:
         name: mongodb-storage
       spec:
         accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "ebs-auto-compute" 
         resources:
           requests:
             storage: 2Gi 
