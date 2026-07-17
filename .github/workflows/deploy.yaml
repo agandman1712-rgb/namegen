@@ -38,7 +38,7 @@ jobs:
 
     - name: Update Kubeconfig for EKS
       run: |
-        aws eks update-kubeconfig --region us-east-1 --name namegen-cluster-v2
+        aws eks update-kubeconfig --region us-east-1 --name namegen-cluster-v1
 
     - name: Update Kubernetes Manifest
       run: |
