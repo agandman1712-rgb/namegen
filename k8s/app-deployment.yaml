@@ -19,12 +19,7 @@ spec:
             - containerPort: 8080
           env:
             - name: MONGODB_URL
-              value: "mongodb://genuser:$(MONGO_ROOT_PASSWORD)@mongodb:27017/namegen?authSource=admin"
-            - name: MONGO_ROOT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: mongodb-secret
-                  key: mongo-root-password
+              value: "mongodb://mongo:27017/names"
           resources:
             requests:
               memory: "256Mi"

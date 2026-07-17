@@ -1,127 +1,56 @@
-name: "DevOps Deploy Pipeline"
+name: Build and Deploy to EKS
 
 on:
-  workflow_dispatch: 
   push:
     branches:
-      - main
-
-env:
-  AWS_REGION: us-east-1
-  ECR_REPOSITORY: namegen
-  EKS_CLUSTER_NAME: namegen-cluster
+      - main 
 
 jobs:
-  infrastructure_and_app:
+  deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
 
-      - name: Security and Anti-Leak Setup
-        run: |
-          echo "::add-mask::${{ secrets.AWS_ACCESS_KEY_ID }}"
-          echo "::add-mask::${{ secrets.AWS_SECRET_ACCESS_KEY }}"
-          set +x
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Wait and Verify Elastic IPs Availability
-        run: |
-          echo "בודק זמינות כתובות IP ציבוריות ב-AWS..."
-          for i in {1..12}; do
-            ALLOCATED=$(aws ec2 describe-addresses --region ${{ env.AWS_REGION }} --query "ElasticAddresses[*].AllocationId" --output text | wc -w)
-            if [ "$ALLOCATED" -lt 5 ]; then
-              echo "יש מקום לכתובות חדשות ($ALLOCATED מתוך 5 תפוסות). ממשיך..."
-              exit 0
-            fi
-            echo "⚠️ חריגת מכסת IP (כל 5 הכתובות תפוסות). ממתין 10 שניות לשחרור ברקע..."
-            sleep 10
-          done
-          echo "❌ AWS עדיין חוסם כתובות IP. אנא ודא שביצעת Release לכתובות ב-VPC Console."
-          exit 1
+    - name: Build, Tag, and Push Image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: namegen-v1
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+    - name: Update Kubeconfig for EKS
+      run: |
+        aws eks update-kubeconfig --region us-east-1 --name namegen-cluster-v2
 
-      - name: Terraform Init
-        run: |
-          cd terraform
-          terraform init
+    - name: Update Kubernetes Manifest
+      run: |
+        sed -i "s|PLACEHOLDER_IMAGE|${{ env.image }}|g" k8s/app-deployment.yaml
 
-      - name: Terraform Apply (Infrastructure Build)
-        run: |
-          cd terraform
-          terraform apply -auto-approve
-          
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+    - name: Deploy to EKS
+      run: |
+        kubectl apply -f k8s/mongodb-service.yaml
+        kubectl apply -f k8s/mongodb-statefulset.yaml
+        kubectl apply -f k8s/app-deployment.yaml
+        kubectl apply -f k8s/app-service.yaml
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build, tag, and push image to Amazon ECR
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Update Kubeconfig for EKS
-        run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
-
-      - name: Inject Database Secrets
-        env:
-          MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
-        run: |
-          sudo apt-get update && sudo apt-get install -y gettext
-          envsubst < k8s/mongodb-secret.yaml > k8s/mongodb-secret-final.yaml
-          mv k8s/mongodb-secret-final.yaml k8s/mongodb-secret.yaml
-
-      - name: Prepare Deployment Image Tag
-        run: |
-          sed -i "s|image: .*namegen:.*|image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/app-deployment.yaml
-
-      - name: Deploy to EKS (Kubernetes Check/Build)
-        run: |
-          kubectl apply -f k8s/mongodb-secret.yaml
-          kubectl apply -f k8s/mongodb-pvc.yaml
-          kubectl apply -f k8s/mongodb-service.yaml
-          kubectl apply -f k8s/mongodb-statefulset.yaml
-          kubectl apply -f k8s/app-deployment.yaml
-          kubectl apply -f k8s/app-service.yaml
-          
-      - name: Fetch and Print Application URL from EKS (NLB)
-        shell: bash
-        run: |
-          echo "=================================================="
-          echo "🔎 ממתין להקצאת כתובת ה-Load Balancer ב-AWS..."
-          echo "=================================================="
-          kubectl rollout status deployment/namegen --timeout=5m
-          NLB_DNS=""
-          for i in {1..30}; do
-            NLB_DNS=$(kubectl get svc namegen-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
-            if [ ! -z "$NLB_DNS" ] && [ "$NLB_DNS" != "null" ]; then
-              break
-            fi
-            sleep 10
-          done
-          echo "=================================================="
-          if [ -z "$NLB_DNS" ] || [ "$NLB_DNS" = "null" ]; then
-            echo "⏳ ה-Load Balancer עדיין בתהליך הקמה ב-AWS."
-          else
-            echo "🚀 ה-Network Load Balancer (NLB) נוצר בהצלחה!"
-            echo "🔗 הקישור הציבורי שלך: http://$NLB_DNS"
-          fi
-          echo "=================================================="
+    - name: Verify Deployment
+      run: |
+        kubectl rollout status deployment/namegen --timeout=120s
